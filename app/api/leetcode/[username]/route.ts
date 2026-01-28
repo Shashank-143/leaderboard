@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { updateUserStats } from '../../../../lib/database'
 
 export async function GET(
   request: NextRequest,
@@ -91,6 +92,9 @@ export async function GET(
         stats.totalSolved = actualTotal
       }
     }
+
+    // Save stats to database
+    await updateUserStats(username, stats)
 
     return NextResponse.json({
       username,

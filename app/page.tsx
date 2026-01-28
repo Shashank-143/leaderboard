@@ -39,14 +39,10 @@ export default function Home() {
   })
   const [sortBy, setSortBy] = useState<'total' | 'easy' | 'medium' | 'hard'>('total')
 
-  // Load data from localStorage on component mount
+  // Load data from Supabase on component mount
   useEffect(() => {
-    const savedUsers = localStorage.getItem('leetcode-users')
+    loadUsersFromDB()
     const savedAutoSync = localStorage.getItem('auto-sync-enabled')
-    
-    if (savedUsers) {
-      setUsers(JSON.parse(savedUsers))
-    }
     
     if (savedAutoSync) {
       setIsAutoSyncEnabled(JSON.parse(savedAutoSync))
@@ -56,8 +52,20 @@ export default function Home() {
       localStorage.setItem('auto-sync-enabled', JSON.stringify(true))
     }
 
-    showNotification('Welcome to LeetCode Leaderboard! Auto-sync enabled every 10 minutes 🚀', 'success')
+    showNotification('Welcome to LeetCode Leaderboard! 🚀', 'success')
   }, [])
+
+  const loadUsersFromDB = async () => {
+    try {
+      const response = await fetch('/api/users')
+      if (response.ok) {
+        const users = await response.json()
+        setUsers(users)
+      }
+    } catch (error) {
+      console.error('Error loading users:', error)
+    }
+  }
 
   // Auto-sync functionality
   useEffect(() => {
@@ -76,7 +84,6 @@ export default function Home() {
 
   const saveUsers = (updatedUsers: User[]) => {
     setUsers(updatedUsers)
-    localStorage.setItem('leetcode-users', JSON.stringify(updatedUsers))
   }
 
   const showNotification = (message: string, type: NotificationState['type']) => {
@@ -138,19 +145,21 @@ export default function Home() {
     try {
       const stats = await fetchLeetCodeStats(leetcodeUsername)
       
-      const newUser: User = {
-        id: Date.now(),
-        displayName,
-        username: leetcodeUsername,
-        stats,
-        lastUpdated: new Date().toISOString(),
-        addedDate: new Date().toISOString()
-      }
+      // Add user to database
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName, username: leetcodeUsername, stats })
+      })
 
-      const updatedUsers = [...users, newUser]
-      saveUsers(updatedUsers)
-      showNotification(`✅ ${displayName} added successfully!`, 'success')
-      return true
+      if (response.ok) {
+        await loadUsersFromDB() // Reload users from database
+        showNotification(`✅ ${displayName} added successfully!`, 'success')
+        return true
+      } else {
+        showNotification('❌ Failed to add user to database', 'error')
+        return false
+      }
     } catch (error) {
       console.error('Error adding user:', error)
       showNotification('❌ Failed to fetch LeetCode stats. Please check the username.', 'error')
@@ -171,25 +180,18 @@ export default function Home() {
     let errorCount = 0
 
     try {
-      const updatedUsers = await Promise.all(
+      // Fetch fresh stats for all users 
+      await Promise.all(
         users.map(async (user) => {
           try {
-            const stats = await fetchLeetCodeStats(user.username)
+            await fetchLeetCodeStats(user.username)
             successCount++
-            return {
-              ...user,
-              stats,
-              lastUpdated: new Date().toISOString()
-            }
           } catch (error) {
             console.error(`Error syncing ${user.username}:`, error)
             errorCount++
-            return user
           }
         })
       )
-
-      saveUsers(updatedUsers)
       
       if (errorCount === 0) {
         showNotification(`🔄 Successfully synced all ${successCount} users!`, 'success')
@@ -200,6 +202,7 @@ export default function Home() {
       showNotification('❌ Sync failed. Please try again.', 'error')
     } finally {
       setIsLoading(false)
+      await loadUsersFromDB()
     }
   }
 
@@ -208,17 +211,13 @@ export default function Home() {
     if (!user) return
 
     try {
-      const stats = await fetchLeetCodeStats(user.username)
-      const updatedUsers = users.map(u => 
-        u.id === userId 
-          ? { ...u, stats, lastUpdated: new Date().toISOString() }
-          : u
-      )
-      
-      saveUsers(updatedUsers)
+      // Fetch fresh stats (this will update the database via API)
+      await fetchLeetCodeStats(user.username)
       showNotification(`✅ ${user.displayName} synced successfully!`, 'success')
     } catch (error) {
       showNotification(`❌ Failed to sync ${user.displayName}`, 'error')
+    } finally {
+      await loadUsersFromDB()
     }
   }
 
