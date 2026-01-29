@@ -94,13 +94,28 @@ export async function GET(
     }
 
     // Save stats to database
-    await updateUserStats(username, stats)
+    try {
+      await updateUserStats(username, stats)
+      console.log('Stats updated successfully for:', username)
+    } catch (dbError) {
+      console.error('Database update failed:', dbError)
+      return NextResponse.json(
+        {
+          error: 'Database update failed',
+          message: dbError instanceof Error ? dbError.message : 'Unknown database error',
+          username,
+          stats // Return the stats even if DB update failed
+        },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
       username,
       stats,
       lastFetched: new Date().toISOString(),
-      source: 'api'
+      source: 'api',
+      success: true
     })
 
   } catch (error) {

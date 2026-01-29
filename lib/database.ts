@@ -36,22 +36,32 @@ export async function addUser(displayName: string, username: string, stats: any)
 }
 
 export async function updateUserStats(username: string, stats: any) {
-  const { data, error } = await supabase
-    .from('users')
-    .update({
-      stats,
-      last_updated: new Date().toISOString()
-    })
-    .eq('username', username)
-    .select()
-    .single()
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .update({
+        stats,
+        last_updated: new Date().toISOString()
+      })
+      .eq('username', username)
+      .select()
 
-  if (error) {
-    console.error('Error updating user stats:', error)
-    return null
+    if (error) {
+      console.error('Error updating user stats:', error)
+      throw new Error(`Database update failed: ${error.message}`)
+    }
+
+    if (!data || data.length === 0) {
+      console.error('No user found with username:', username)
+      throw new Error(`User not found: ${username}`)
+    }
+
+    console.log('Successfully updated stats for:', username)
+    return data[0]
+  } catch (error) {
+    console.error('Error in updateUserStats:', error)
+    throw error
   }
-
-  return data
 }
 
 export async function deleteUser(id: number) {

@@ -31,6 +31,7 @@ export interface NotificationState {
 export default function Home() {
   const [users, setUsers] = useState<User[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [syncingUserId, setSyncingUserId] = useState<number | null>(null)
   const [isAutoSyncEnabled, setIsAutoSyncEnabled] = useState(true)
   const [notification, setNotification] = useState<NotificationState>({
     message: '',
@@ -57,13 +58,26 @@ export default function Home() {
 
   const loadUsersFromDB = async () => {
     try {
-      const response = await fetch('/api/users')
+      setIsLoading(true)
+      const response = await fetch('/api/users', { 
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache'
+        }
+      })
       if (response.ok) {
         const users = await response.json()
         setUsers(users)
+        console.log('Loaded', users.length, 'users from database')
+      } else {
+        console.error('Failed to load users:', response.status)
+        showNotification('❌ Failed to load users from database', 'error')
       }
     } catch (error) {
       console.error('Error loading users:', error)
+      showNotification('❌ Error loading users from database', 'error')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -72,15 +86,19 @@ export default function Home() {
     let interval: NodeJS.Timeout | null = null
     
     if (isAutoSyncEnabled && users.length > 0) {
-      interval = setInterval(() => {
-        syncAllUsers()
+      interval = setInterval(async () => {
+        // Don't run auto-sync if already loading
+        if (!isLoading) {
+          console.log('Auto-sync triggered for', users.length, 'users')
+          await syncAllUsers()
+        }
       }, 10 * 60 * 1000) // 10 minutes
     }
 
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [isAutoSyncEnabled, users.length])
+  }, [isAutoSyncEnabled, users.length, isLoading])
 
   const saveUsers = (updatedUsers: User[]) => {
     setUsers(updatedUsers)
@@ -180,18 +198,29 @@ export default function Home() {
     let errorCount = 0
 
     try {
-      // Fetch fresh stats for all users 
-      await Promise.all(
-        users.map(async (user) => {
-          try {
-            await fetchLeetCodeStats(user.username)
-            successCount++
-          } catch (error) {
-            console.error(`Error syncing ${user.username}:`, error)
+      // Fetch fresh stats for all users sequentially to avoid rate limiting
+      for (const user of users) {
+        try {
+          const response = await fetch(`/api/leetcode/${user.username}`)
+          if (response.ok) {
+            const data = await response.json()
+            if (!data.error) {
+              successCount++
+            } else {
+              console.error(`Error syncing ${user.username}:`, data.message)
+              errorCount++
+            }
+          } else {
+            console.error(`HTTP error syncing ${user.username}:`, response.status)
             errorCount++
           }
-        })
-      )
+        } catch (error) {
+          console.error(`Error syncing ${user.username}:`, error)
+          errorCount++
+        }
+        // Add small delay to avoid rate limiting
+        await new Promise(resolve => setTimeout(resolve, 500))
+      }
       
       if (errorCount === 0) {
         showNotification(`🔄 Successfully synced all ${successCount} users!`, 'success')
@@ -210,13 +239,23 @@ export default function Home() {
     const user = users.find(u => u.id === userId)
     if (!user) return
 
+    setSyncingUserId(userId)
     try {
-      // Fetch fresh stats (this will update the database via API)
-      await fetchLeetCodeStats(user.username)
-      showNotification(`✅ ${user.displayName} synced successfully!`, 'success')
+      const response = await fetch(`/api/leetcode/${user.username}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.error) {
+          throw new Error(data.message || 'Failed to sync user')
+        }
+        showNotification(`✅ ${user.displayName} synced successfully!`, 'success')
+      } else {
+        throw new Error(`HTTP error: ${response.status}`)
+      }
     } catch (error) {
-      showNotification(`❌ Failed to sync ${user.displayName}`, 'error')
+      console.error('Sync error:', error)
+      showNotification(`❌ Failed to sync ${user.displayName}: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
     } finally {
+      setSyncingUserId(null)
       await loadUsersFromDB()
     }
   }
@@ -268,6 +307,7 @@ export default function Home() {
           onSyncUser={syncUser}
           onSyncAll={syncAllUsers}
           isLoading={isLoading}
+          syncingUserId={syncingUserId}
         />
         
         <AddUserForm onAddUser={addUser} isLoading={isLoading} />

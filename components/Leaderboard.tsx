@@ -11,9 +11,10 @@ interface LeaderboardProps {
   onSyncUser: (userId: number) => void
   onSyncAll?: () => void
   isLoading?: boolean
+  syncingUserId?: number | null
 }
 
-export default function Leaderboard({ users, sortBy, onSortChange, onSyncUser, onSyncAll, isLoading }: LeaderboardProps) {
+export default function Leaderboard({ users, sortBy, onSortChange, onSyncUser, onSyncAll, isLoading, syncingUserId }: LeaderboardProps) {
   if (users.length === 0) {
     return (
       <motion.div 
@@ -162,10 +163,15 @@ export default function Leaderboard({ users, sortBy, onSortChange, onSyncUser, o
                       {formatTimeSince(user.lastUpdated)}
                     </div>
                     <motion.button
-                      whileHover={{ scale: 1.1, rotate: 180 }}
+                      whileHover={{ scale: syncingUserId === user.id ? 1 : 1.1, rotate: syncingUserId === user.id ? 0 : 180 }}
                       whileTap={{ scale: 0.95 }}
                       onClick={() => onSyncUser(user.id)}
-                      className="p-2 text-gray-300 hover:text-accent transition-all duration-300 hover:shadow-glow rounded-full bg-black-300/30 border border-black-light"
+                      disabled={syncingUserId === user.id || isLoading}
+                      className={`p-2 transition-all duration-300 rounded-full border border-black-light ${
+                        syncingUserId === user.id 
+                          ? 'text-accent animate-spin bg-accent/10' 
+                          : 'text-gray-300 hover:text-accent hover:shadow-glow bg-black-300/30'
+                      } disabled:cursor-not-allowed`}
                       title={`Refresh ${user.displayName}'s stats`}
                     >
                       <ArrowPathIcon className="w-5 h-5" />
