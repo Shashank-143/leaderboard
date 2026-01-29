@@ -27,12 +27,18 @@ export async function GET(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'application/json',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+          'Referer': 'https://leetcode.com'
         },
         body: JSON.stringify({
           query,
           variables: { username }
-        })
+        }),
+        // Add timeout for deployment
+        signal: AbortSignal.timeout(15000) // 15 second timeout
       })
 
       if (!response.ok) {
@@ -119,11 +125,39 @@ export async function GET(
     })
 
   } catch (error) {
+    console.error('LeetCode API Error:', error)
+    
+    // Different error handling for different error types
+    if (error instanceof Error) {
+      if (error.name === 'TimeoutError') {
+        return NextResponse.json(
+          {
+            error: 'Request timeout',
+            message: 'LeetCode API request timed out. Please try again.',
+            username
+          },
+          { status: 408 }
+        )
+      }
+      
+      if (error.message.includes('fetch')) {
+        return NextResponse.json(
+          {
+            error: 'Network error',
+            message: 'Unable to connect to LeetCode API. Please check your connection.',
+            username
+          },
+          { status: 503 }
+        )
+      }
+    }
+    
     return NextResponse.json(
       {
         error: 'Failed to fetch LeetCode stats',
         message: error instanceof Error ? error.message : 'Unknown error',
-        username
+        username,
+        timestamp: new Date().toISOString()
       },
       { status: 500 }
     )

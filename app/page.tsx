@@ -201,25 +201,39 @@ export default function Home() {
       // Fetch fresh stats for all users sequentially to avoid rate limiting
       for (const user of users) {
         try {
-          const response = await fetch(`/api/leetcode/${user.username}`)
+          const response = await fetch(`/api/leetcode/${user.username}`, {
+            method: 'GET',
+            headers: {
+              'Cache-Control': 'no-cache'
+            }
+          })
+          
           if (response.ok) {
             const data = await response.json()
             if (!data.error) {
               successCount++
             } else {
-              console.error(`Error syncing ${user.username}:`, data.message)
+              console.error(`Sync failed for ${user.username}:`, data.message)
               errorCount++
             }
           } else {
-            console.error(`HTTP error syncing ${user.username}:`, response.status)
+            const errorText = await response.text()
+            console.error(`HTTP error ${response.status} for ${user.username}:`, errorText)
+            
+            // Show specific error for common deployment issues
+            if (response.status === 500) {
+              console.error('Server error - check deployment logs and environment variables')
+            } else if (response.status === 408 || response.status === 504) {
+              console.error('Timeout error - deployment platform timeout limits exceeded')
+            }
             errorCount++
           }
         } catch (error) {
-          console.error(`Error syncing ${user.username}:`, error)
+          console.error(`Network error syncing ${user.username}:`, error)
           errorCount++
         }
-        // Add small delay to avoid rate limiting
-        await new Promise(resolve => setTimeout(resolve, 500))
+        // Add delay to prevent rate limiting (especially important in deployment)
+        await new Promise(resolve => setTimeout(resolve, 1000)) // Increased to 1 second
       }
       
       if (errorCount === 0) {
